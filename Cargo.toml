@@ -1,0 +1,14 @@
+[package]
+name = "terminal_waterfall"
+version = "0.1.0"
+authors = ["Allen Welkie <>"]
+
+[dependencies]
+terminal_size = "*"
+term = "*"
+rustfft = "*"
+libc = "*"
+num = "*"
+
+[dependencies.drawille]
+git = "git://github.com/awelkie/drawille-rs"
