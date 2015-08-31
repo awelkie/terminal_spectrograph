@@ -69,14 +69,14 @@ fn init() -> Result<(), ()> {
 }
 
 unsafe extern "C" fn rx_callback(transfer: *mut ffi::Transfer) -> c_int {
-    let sender: &Option<Sender<Vec<Complex<u8>>>> = mem::transmute((*transfer).rx_ctx);
+    let sender: &Option<Sender<Vec<Complex<i8>>>> = mem::transmute((*transfer).rx_ctx);
 
     match sender {
         &Some(ref rx_send) => {
             assert_eq!((*transfer).valid_length & 0x01, 0);
             let buffer = slice::from_raw_parts(
                 mem::transmute((*transfer).buffer),
-                (*transfer).valid_length as usize
+                (*transfer).valid_length as usize / 2
             ).to_vec();
             match rx_send.send(buffer) {
                 Ok(()) => 0,
@@ -90,7 +90,7 @@ unsafe extern "C" fn rx_callback(transfer: *mut ffi::Transfer) -> c_int {
 
 pub struct HackRF {
     dev: *mut ffi::hackrf_device,
-    rx: Option<Sender<Vec<u8>>>,
+    rx: Option<Sender<Vec<Complex<i8>>>>,
 }
 
 impl HackRF {
@@ -124,8 +124,8 @@ impl HackRF {
         }
     }
 
-    pub fn start_rx(&mut self) -> Receiver<Vec<u8>> {
-        let (rx_send, rx_rec) = channel::<Vec<u8>>();
+    pub fn start_rx(&mut self) -> Receiver<Vec<Complex<i8>>> {
+        let (rx_send, rx_rec) = channel::<Vec<Complex<i8>>>();
         self.rx = Some(rx_send);
         unsafe {
             ffi::hackrf_start_rx(self.dev, rx_callback, mem::transmute(&self.rx));
