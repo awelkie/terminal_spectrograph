@@ -1,8 +1,7 @@
 extern crate libc;
 extern crate num;
 extern crate rustfft;
-extern crate drawille;
-extern crate terminal_size;
+extern crate rustty;
 
 mod radio;
 
@@ -10,56 +9,67 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread;
 use num::Complex;
 use rustfft::FFT;
-use drawille::braille::Canvas;
-use terminal_size::{Width, terminal_size};
+use rustty::{Terminal, Cell};
 
 use radio::hackrf::HackRF;
 
-const TICKS: &'static str = "▁▂▃▄▅▆▇█";
-
-//fn map_intensity(val: f32) -> term::color::Color {
-    //let sorted_colors = [BLACK, BRIGHT_BLACK, MAGENTA, BRIGHT_MAGENTA, BLUE,
-                         //BRIGHT_BLUE, CYAN, BRIGHT_CYAN, GREEN, BRIGHT_GREEN, YELLOW,
-                         //BRIGHT_YELLOW, RED, BRIGHT_RED, WHITE, BRIGHT_WHITE,];
-    //let num_colors = sorted_colors.len();
-    //if val >= 1.0 {
-        //sorted_colors[num_colors - 1]
-    //} else if val <= 0.0 {
-        //sorted_colors[0]
-    //} else {
-        //sorted_colors[(val * num_colors as f32).floor() as usize]
-    //}
-//}
-
-fn process_buffer(recv: Receiver<Vec<Complex<i8>>>, send: Sender<Vec<Complex<i8>>>, fft_len: usize) {
+fn process_buffer(recv: Receiver<Vec<Complex<i8>>>, send: Sender<Vec<Complex<f32>>>, fft_len: usize) {
     let mut fft = FFT::new(fft_len, false);
-    let mut spectrum = vec![Complex::new(0, 0); fft_len];
+    let mut signal = vec![Complex::new(0.0, 0.0); fft_len];
+    let mut spectrum = vec![Complex::new(0.0, 0.0); fft_len];
+    //TODO wrap around
     for buff in recv.iter() {
         let (num_full_ffts, num_remaining) = (buff.len() / fft_len, buff.len() % fft_len);
         for i in 0..num_full_ffts {
-            fft.process(&buff[(i * fft_len) .. ((i + 1) * fft_len)], &mut spectrum[..]);
+            for (s, x) in signal.iter_mut().zip(buff[i * fft_len .. (i + 1) * fft_len].iter()) {
+                *s = Complex::new(x.re as f32, x.im as f32);
+            }
+            fft.process(&signal[..], &mut spectrum[..]);
             send.send(spectrum.clone());
         }
     }
 }
 
-fn draw_spectrum(spec: Vec<Complex<i8>>, canvas: &mut Canvas, w: usize, h: usize) {
-    canvas.clear();
-    for i in 0..w {
-        let re = spec[i].re as f32;
-        let im = spec[i].im as f32;
-        let height = (re * re + im * im).sqrt();
-        let max_height = 128;
-        //canvas.set((h as f32 * height / 128.0) as usize, i);
-        canvas.set(i, (h as f32 * height / 128.0) as usize);
+// TODO
+fn pixel_nums_to_braille(p1: Option<u8>, u2: Option<u8>) -> char {
+    '⡀'
+}
+
+fn draw_spectrum(term: &mut Terminal, spec: Vec<Complex<f32>>) {
+    term.clear();
+    let (num_cols, num_rows) = term.size();
+    let max_height = 1000.0;
+    for col_idx in 0..num_cols {
+        //TODO binning
+        // height in float between 0 and 1.
+        let (h1, h2) = (spec[col_idx * 2].norm(), spec[col_idx * 2 + 1].norm());
+        let (h1, h2) = (h1 / max_height, h2 / max_height);
+        let h1 = if h1 > 1.0 { 1.0 } else { h1 };
+        let h2 = if h2 > 1.0 { 1.0 } else { h2 };
+
+        // which character the pixel will be in
+        let c1 = (h1 * num_rows as f32).floor() as usize;
+        let c2 = (h2 * num_rows as f32).floor() as usize;
+        let c1 = if c1 == num_rows { c1 - 1 } else { c1 };
+        let c2 = if c2 == num_rows { c2 - 1 } else { c2 };
+
+        // which pixel in that character
+        // TODO
+        let p1 = 1;
+        let p2 = 1;
+
+        if c1 == c2 {
+            term[(col_idx, c1)] = Cell::with_char(pixel_nums_to_braille(Some(p1), Some(p2)));
+        } else {
+            term[(col_idx, c1)] = Cell::with_char(pixel_nums_to_braille(Some(p1), None));
+            term[(col_idx, c2)] = Cell::with_char(pixel_nums_to_braille(None, Some(p2)));
+        }
     }
-    println!("{}", canvas.frame());
 }
 
 fn main() {
-    let (Width(w), _) = terminal_size().unwrap();
-    let (canvas_width, canvas_height) = ((w * 2) as usize, 20);
-    let mut canvas = Canvas::new(canvas_width, canvas_height);
+    let mut term = Terminal::new().unwrap();
+
     let mut radio = HackRF::open().unwrap();
     let freq_hz = 914000000;
     let sample_rate = 1e6;
@@ -74,7 +84,9 @@ fn main() {
     });
 
     for spec in spec_recv.iter() {
-        draw_spectrum(spec, &mut canvas, canvas_width, canvas_height);
+        draw_spectrum(&mut term, spec);
+        term.swap_buffers().unwrap();
+        thread::sleep_ms(500);
     }
 
     child.join().unwrap();
