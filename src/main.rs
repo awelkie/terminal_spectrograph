@@ -7,6 +7,7 @@ mod radio;
 
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread;
+use std::char;
 use num::Complex;
 use rustfft::FFT;
 use rustty::{Terminal, Cell};
@@ -15,54 +16,98 @@ use radio::hackrf::HackRF;
 
 fn process_buffer(recv: Receiver<Vec<Complex<i8>>>, send: Sender<Vec<Complex<f32>>>, fft_len: usize) {
     let mut fft = FFT::new(fft_len, false);
-    let mut signal = vec![Complex::new(0.0, 0.0); fft_len];
     let mut spectrum = vec![Complex::new(0.0, 0.0); fft_len];
-    //TODO wrap around
+    let mut signal = Vec::with_capacity(fft_len);
     for buff in recv.iter() {
-        let (num_full_ffts, num_remaining) = (buff.len() / fft_len, buff.len() % fft_len);
-        for i in 0..num_full_ffts {
-            for (s, x) in signal.iter_mut().zip(buff[i * fft_len .. (i + 1) * fft_len].iter()) {
-                *s = Complex::new(x.re as f32, x.im as f32);
+        for x in buff {
+            signal.push(Complex::new(x.re as f32, x.im as f32));
+
+            if signal.len() >= signal.capacity() {
+                fft.process(&signal[..], &mut spectrum[..]);
+                if let Err(_) = send.send(spectrum.clone()) {
+                    return;
+                }
+                signal.clear();
             }
-            fft.process(&signal[..], &mut spectrum[..]);
-            send.send(spectrum.clone());
         }
     }
 }
 
-// TODO
-fn pixel_nums_to_braille(p1: Option<u8>, u2: Option<u8>) -> char {
-    '⡀'
+fn pixel_nums_to_braille(p1: Option<u8>, p2: Option<u8>) -> char {
+    let pixel_map = [[0x01, 0x08],
+                     [0x02, 0x10],
+                     [0x04, 0x20],
+                     [0x40, 0x80]];
+
+    let mut c = 0;
+    if let Some(p) = p1 {
+        c |= pixel_map[p as usize][0];
+    }
+
+    if let Some(p) = p2 {
+        c |= pixel_map[p as usize][1];
+    }
+
+    char::from_u32((0x2800 + c) as u32).unwrap()
+}
+
+fn bin_heights(source: &[Complex<f32>], dest: &mut [f32]) {
+    let samples_per_bin = source.len() / dest.len();
+    let mut height = 0.0;
+    let mut i = 0;
+    let mut j = 0;
+    for x in source {
+        height += x.norm();
+        if i >= samples_per_bin {
+            dest[j] = height / samples_per_bin as f32;
+            i = 0;
+            j += 1;
+            height = 0.0;
+        } else {
+            i += 1;
+        }
+    }
+
+    if i != 0 {
+        dest[j] = height / i as f32;
+    }
 }
 
 fn draw_spectrum(term: &mut Terminal, spec: Vec<Complex<f32>>) {
-    term.clear();
+    term.clear().unwrap();
     let (num_cols, num_rows) = term.size();
+    // TODO what should this max height be?
+    let num_rows = if num_rows > 20 { 20 } else { num_rows };
+    let pixel_height = num_rows * 4;
+    let pixel_width = num_cols * 2;
+    // TODO what should this value be?
     let max_height = 1000.0;
+
+    let mut bins = vec![0.0; pixel_width];
+    bin_heights(&spec[..], &mut bins[..]);
+
     for col_idx in 0..num_cols {
-        //TODO binning
         // height in float between 0 and 1.
-        let (h1, h2) = (spec[col_idx * 2].norm(), spec[col_idx * 2 + 1].norm());
-        let (h1, h2) = (h1 / max_height, h2 / max_height);
-        let h1 = if h1 > 1.0 { 1.0 } else { h1 };
-        let h2 = if h2 > 1.0 { 1.0 } else { h2 };
+        let h1 = bins[col_idx * 2] / max_height;
+        let h2 = bins[col_idx * 2 + 1] / max_height;
 
-        // which character the pixel will be in
-        let c1 = (h1 * num_rows as f32).floor() as usize;
-        let c2 = (h2 * num_rows as f32).floor() as usize;
-        let c1 = if c1 == num_rows { c1 - 1 } else { c1 };
-        let c2 = if c2 == num_rows { c2 - 1 } else { c2 };
+        // The "pixel" height of each point.
+        let p1 = (h1 * pixel_height as f32).floor() as usize;
+        let p2 = (h2 * pixel_height as f32).floor() as usize;
+        let p1 = if p1 >= pixel_height { pixel_height - 1 } else { p1 };
+        let p2 = if p2 >= pixel_height { pixel_height - 1 } else { p2 };
 
-        // which pixel in that character
-        // TODO
-        let p1 = 1;
-        let p2 = 1;
+        let c1 = num_rows - p1 / 4;
+        let c2 = num_rows - p2 / 4;
 
         if c1 == c2 {
-            term[(col_idx, c1)] = Cell::with_char(pixel_nums_to_braille(Some(p1), Some(p2)));
+            term[(col_idx, c1)] = Cell::with_char(
+                pixel_nums_to_braille(Some((p1 % 4) as u8), Some((p2 % 4) as u8)));
         } else {
-            term[(col_idx, c1)] = Cell::with_char(pixel_nums_to_braille(Some(p1), None));
-            term[(col_idx, c2)] = Cell::with_char(pixel_nums_to_braille(None, Some(p2)));
+            term[(col_idx, c1)] = Cell::with_char(
+                pixel_nums_to_braille(Some((p1 % 4) as u8), None));
+            term[(col_idx, c2)] = Cell::with_char(
+                pixel_nums_to_braille(None, Some((p2 % 4) as u8)));
         }
     }
 }

@@ -2,11 +2,11 @@ use std::sync::{Once, ONCE_INIT};
 use std::sync::mpsc::{channel, Sender, Receiver};
 use std::ptr;
 use std::mem;
-use std::vec;
 use std::slice;
 use libc::c_int;
 use num::Complex;
 
+#[allow(dead_code, non_camel_case_types)]
 mod ffi {
     use libc::{c_void, c_int};
 
