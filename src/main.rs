@@ -81,7 +81,7 @@ fn draw_spectrum(term: &mut Terminal, spec: Vec<Complex<f32>>) {
     let pixel_height = num_rows * 4;
     let pixel_width = num_cols * 2;
     // TODO what should this value be?
-    let max_height = 1000.0;
+    let max_height = 500.0;
 
     let mut bins = vec![0.0; pixel_width];
     bin_heights(&spec[..], &mut bins[..]);
@@ -97,8 +97,14 @@ fn draw_spectrum(term: &mut Terminal, spec: Vec<Complex<f32>>) {
         let p1 = if p1 >= pixel_height { pixel_height - 1 } else { p1 };
         let p2 = if p2 >= pixel_height { pixel_height - 1 } else { p2 };
 
-        let c1 = num_rows - p1 / 4;
-        let c2 = num_rows - p2 / 4;
+        // Reverse it, since the terminal indexing is from the top
+        let p1 = pixel_height - p1;
+        let p2 = pixel_height - p2;
+
+        let c1 = p1 / 4;
+        let c2 = p2 / 4;
+        //let c1 = num_rows - p1 / 4;
+        //let c2 = num_rows - p2 / 4;
 
         if c1 == c2 {
             term[(col_idx, c1)] = Cell::with_char(
@@ -117,8 +123,8 @@ fn main() {
 
     let mut radio = HackRF::open().unwrap();
     let freq_hz = 914000000;
-    let sample_rate = 1e6;
-    let fft_len = 2048;
+    let sample_rate = 500e3;
+    let fft_len = 4096;
     radio.set_frequency(freq_hz).unwrap();
     radio.set_sample_rate(sample_rate).unwrap();
     let (spec_send, spec_recv) = channel();
