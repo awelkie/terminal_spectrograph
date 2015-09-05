@@ -2,6 +2,8 @@ extern crate libc;
 extern crate num;
 extern crate rustfft;
 extern crate rustty;
+extern crate rustc_serialize;
+extern crate docopt;
 
 mod radio;
 
@@ -10,8 +12,32 @@ use std::char;
 use num::Complex;
 use rustfft::FFT;
 use rustty::{Terminal, Cell, Event};
+use docopt::Docopt;
 
 use radio::hackrf::HackRF;
+
+const USAGE: &'static str = "
+Terminal Spectrograph
+
+Usage:
+  terminal_spectrograph <freq-hz> <bandwidth-hz> [--fft-len=<len>]
+  terminal_spectrograph (-h | --help)
+  terminal_spectrograph --version
+
+Options:
+  -h --help        Show this screen.
+  --version        Show version.
+  --fft-len=<len>  Length of the FFT [default: 4096].
+";
+const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+
+#[derive(Debug, RustcDecodable)]
+struct Args {
+    arg_freq_hz: Option<u64>,
+    arg_bandwidth_hz: Option<f64>,
+    flag_fft_len: usize,
+    flag_version: bool,
+}
 
 fn process_buffer(recv: Receiver<Vec<Complex<i8>>>, send: Sender<Vec<Complex<f32>>>, fft_len: usize) {
     let mut fft = FFT::new(fft_len, false);
@@ -118,6 +144,15 @@ fn draw_spectrum(term: &mut Terminal, spec: Vec<Complex<f32>>) {
 }
 
 fn main() {
+    let args: Args = Docopt::new(USAGE)
+                                .and_then(|d| d.decode())
+                                .unwrap_or_else(|e| e.exit());
+
+    if args.flag_version {
+        println!("{}", VERSION);
+        return;
+    }
+
     let mut radio = HackRF::open().unwrap_or_else(|_| {
         panic!("Couldn't open HackRF radio.");
     });
@@ -126,16 +161,13 @@ fn main() {
         panic!("Couldn't open terminal: {}", e);
     });
 
-    let freq_hz = 914000000;
-    let sample_rate = 1e6;
-    let fft_len = 4096;
-    radio.set_frequency(freq_hz).unwrap();
-    radio.set_sample_rate(sample_rate).unwrap();
+    radio.set_frequency(args.arg_freq_hz.unwrap()).unwrap();
+    radio.set_sample_rate(args.arg_bandwidth_hz.unwrap()).unwrap();
     let (spec_send, spec_recv) = channel();
     let recv = radio.start_rx();
 
     let child = std::thread::spawn(move || {
-        process_buffer(recv, spec_send, fft_len);
+        process_buffer(recv, spec_send, args.flag_fft_len);
     });
 
     for spec in spec_recv.iter() {

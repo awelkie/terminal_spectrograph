@@ -8,6 +8,5 @@ rustfft = "*"
 libc = "*"
 num = "*"
 rustty = "*"
-
-[dependencies.drawille]
-git = "git://github.com/P1start/drawille-rs"
+docopt = "*"
+rustc-serialize = "*"
