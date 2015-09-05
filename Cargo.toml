@@ -10,4 +10,4 @@ num = "*"
 rustty = "*"
 
 [dependencies.drawille]
-git = "git://github.com/awelkie/drawille-rs"
+git = "git://github.com/P1start/drawille-rs"

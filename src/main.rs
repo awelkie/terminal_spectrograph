@@ -6,11 +6,10 @@ extern crate rustty;
 mod radio;
 
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::thread;
 use std::char;
 use num::Complex;
 use rustfft::FFT;
-use rustty::{Terminal, Cell};
+use rustty::{Terminal, Cell, Event};
 
 use radio::hackrf::HackRF;
 
@@ -119,11 +118,16 @@ fn draw_spectrum(term: &mut Terminal, spec: Vec<Complex<f32>>) {
 }
 
 fn main() {
-    let mut term = Terminal::new().unwrap();
+    let mut radio = HackRF::open().unwrap_or_else(|_| {
+        panic!("Couldn't open HackRF radio.");
+    });
 
-    let mut radio = HackRF::open().unwrap();
+    let mut term = Terminal::new().unwrap_or_else(|e| {
+        panic!("Couldn't open terminal: {}", e);
+    });
+
     let freq_hz = 914000000;
-    let sample_rate = 500e3;
+    let sample_rate = 1e6;
     let fft_len = 4096;
     radio.set_frequency(freq_hz).unwrap();
     radio.set_sample_rate(sample_rate).unwrap();
@@ -137,8 +141,17 @@ fn main() {
     for spec in spec_recv.iter() {
         draw_spectrum(&mut term, spec);
         term.swap_buffers().unwrap();
-        thread::sleep_ms(500);
+        if let Ok(Some(Event::Key('q'))) = term.get_event(0) {
+            break;
+        }
     }
+    drop(spec_recv);
 
-    child.join().unwrap();
+    radio.stop_rx().unwrap_or_else(|_| {
+        panic!("Couldn't stop receiving");
+    });
+
+    child.join().unwrap_or_else(|_| {
+        panic!("Error joining with FFT thread");
+    });
 }

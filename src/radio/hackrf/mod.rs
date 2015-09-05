@@ -14,6 +14,7 @@ mod ffi {
     pub type callback = unsafe extern "C" fn(*mut Transfer) -> c_int;
 
     #[repr(C)]
+    #[derive(Debug)]
     pub enum Return {
         SUCCESS = 0,
         TRUE = 1,
@@ -44,11 +45,12 @@ mod ffi {
         pub fn hackrf_init() -> Return;
         pub fn hackrf_exit() -> Return;
         pub fn hackrf_open(dev: *mut *mut hackrf_device) -> Return;
-        pub fn hackrf_close(dev: *mut *mut hackrf_device) -> Return;
+        pub fn hackrf_close(dev: *mut hackrf_device) -> Return;
         pub fn hackrf_set_freq(dev: *mut hackrf_device, freq_hz: u64) -> Return;
         pub fn hackrf_set_sample_rate(dev: *mut hackrf_device, freq_hz: f64) -> Return;
         pub fn hackrf_start_rx(dev: *mut hackrf_device, callback: callback,
                                rx_ctx: *mut c_void) -> Return;
+        pub fn hackrf_stop_rx(dev: *mut hackrf_device) -> Return;
     }
 }
 
@@ -128,16 +130,32 @@ impl HackRF {
         let (rx_send, rx_rec) = channel::<Vec<Complex<i8>>>();
         self.rx = Some(rx_send);
         unsafe {
+            // TODO this can return an error
             ffi::hackrf_start_rx(self.dev, rx_callback, mem::transmute(&self.rx));
         };
         return rx_rec;
+    }
+
+    pub fn stop_rx(&mut self) -> Result<(), ()> {
+        unsafe {
+            match ffi::hackrf_stop_rx(self.dev) {
+                ffi::Return::SUCCESS => {
+                    //self.rx = None;
+                    Ok(())
+                },
+                _ => Err(()),
+            }
+        }
     }
 }
 
 impl Drop for HackRF {
     fn drop(&mut self) {
         unsafe {
-            ffi::hackrf_close(&mut self.dev);
+            match ffi::hackrf_close(self.dev) {
+                ffi::Return::SUCCESS => (),
+                e => panic!("Couldn't close radio: {:?}", e),
+            }
         }
     }
 }
