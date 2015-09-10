@@ -1,6 +1,7 @@
 use std::char;
+use std::cmp::max;
 use num::Complex;
-use rustty::{Terminal, Cell};
+use rustty::{Terminal, Cell, Style, Attr};
 
 // indexing is from the top of the cell
 fn pixel_nums_to_braille(p1: Option<u8>, p2: Option<u8>) -> char {
@@ -11,11 +12,15 @@ fn pixel_nums_to_braille(p1: Option<u8>, p2: Option<u8>) -> char {
 
     let mut c = 0;
     if let Some(p) = p1 {
-        c |= pixel_map[p as usize][0];
+        for i in p..4 {
+            c |= pixel_map[i as usize][0];
+        }
     }
 
     if let Some(p) = p2 {
-        c |= pixel_map[p as usize][1];
+        for i in p..4 {
+            c |= pixel_map[i as usize][1];
+        }
     }
 
     char::from_u32((0x2800 + c) as u32).unwrap()
@@ -32,6 +37,8 @@ fn fft_shift<T: Clone>(spec: &mut [T]) {
 }
 
 fn spectrum_to_bin_heights(spec: &[Complex<f32>], dest: &mut [f32]) {
+    //TODO should be plotting in log scale
+
     // subsample
     let mut last_idx = -1isize;
     for (i, x) in spec.iter().map(|x| x.norm()).enumerate() {
@@ -41,7 +48,53 @@ fn spectrum_to_bin_heights(spec: &[Complex<f32>], dest: &mut [f32]) {
         }
     }
 
+    //TODO unnecessary allocation
     fft_shift(dest);
+}
+
+fn char_to_cell(c: char) -> Cell {
+    Cell::new(c, Style::with_attr(Attr::Bold), Style::with_attr(Attr::Default))
+}
+
+fn draw_pixel_pair(term: &mut Terminal, col_idx: usize, p1: usize, p2: usize) {
+    let max_pixel_height = 4 * term.rows();
+
+    // clamp heights
+    let p1 = if p1 >= max_pixel_height { max_pixel_height - 1} else { p1 };
+    let p2 = if p2 >= max_pixel_height { max_pixel_height - 1} else { p2 };
+
+    // Reverse it, since the terminal indexing is from the top
+    let p1 = max_pixel_height - p1 - 1;
+    let p2 = max_pixel_height - p2 - 1;
+
+    // cell indices
+    let c1 = p1 / 4;
+    let c2 = p2 / 4;
+
+    let full_cell_char = pixel_nums_to_braille(Some(0), Some(0));
+    for row_idx in max(c1, c2)..term.rows() {
+        term[(col_idx, row_idx)] = char_to_cell(full_cell_char);
+    }
+
+    let left_fill_cell_char = pixel_nums_to_braille(Some(0), None);
+    for row_idx in c1..max(c1, c2) {
+        term[(col_idx, row_idx)] = char_to_cell(left_fill_cell_char);
+    }
+
+    let right_fill_cell_char = pixel_nums_to_braille(Some(0), None);
+    for row_idx in c2..max(c1, c2) {
+        term[(col_idx, row_idx)] = char_to_cell(right_fill_cell_char);
+    }
+
+    if c1 == c2 {
+        term[(col_idx, c1)] = char_to_cell(
+            pixel_nums_to_braille(Some((p1 % 4) as u8), Some((p2 % 4) as u8)));
+    } else {
+        term[(col_idx, c1)] = char_to_cell(
+            pixel_nums_to_braille(Some((p1 % 4) as u8), None));
+        term[(col_idx, c2)] = char_to_cell(
+            pixel_nums_to_braille(None, Some((p2 % 4) as u8)));
+    }
 }
 
 pub fn draw_spectrum(term: &mut Terminal, spec: Vec<Complex<f32>>) {
@@ -63,25 +116,8 @@ pub fn draw_spectrum(term: &mut Terminal, spec: Vec<Complex<f32>>) {
         // The "pixel" height of each point.
         let p1 = (h1 * pixel_height as f32).floor() as usize;
         let p2 = (h2 * pixel_height as f32).floor() as usize;
-        let p1 = if p1 >= pixel_height { pixel_height - 1} else { p1 };
-        let p2 = if p2 >= pixel_height { pixel_height - 1} else { p2 };
 
-        // Reverse it, since the terminal indexing is from the top
-        let p1 = pixel_height - p1 - 1;
-        let p2 = pixel_height - p2 - 1;
-
-        let c1 = p1 / 4;
-        let c2 = p2 / 4;
-
-        if c1 == c2 {
-            term[(col_idx, c1)] = Cell::with_char(
-                pixel_nums_to_braille(Some((p1 % 4) as u8), Some((p2 % 4) as u8)));
-        } else {
-            term[(col_idx, c1)] = Cell::with_char(
-                pixel_nums_to_braille(Some((p1 % 4) as u8), None));
-            term[(col_idx, c2)] = Cell::with_char(
-                pixel_nums_to_braille(None, Some((p2 % 4) as u8)));
-        }
+        draw_pixel_pair(term, col_idx, p1, p2);
     }
 }
 
@@ -108,9 +144,9 @@ mod tests {
 
     #[test]
     fn test_pixel_nums() {
-        assert_eq!(pixel_nums_to_braille(Some(0), Some(0)), '⠉');
-        assert_eq!(pixel_nums_to_braille(Some(1), Some(2)), '⠢');
+        assert_eq!(pixel_nums_to_braille(Some(0), Some(0)), '⣿');
+        assert_eq!(pixel_nums_to_braille(Some(1), Some(2)), '⣦');
         assert_eq!(pixel_nums_to_braille(None, Some(3)), '⢀');
-        assert_eq!(pixel_nums_to_braille(Some(2), None), '⠄');
+        assert_eq!(pixel_nums_to_braille(Some(2), None), '⡄');
     }
 }
