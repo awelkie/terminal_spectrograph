@@ -1,5 +1,5 @@
 use std::char;
-use std::cmp::max;
+use std::cmp::{max, min};
 use num::Complex;
 use rustty::{Terminal, Cell, Style, Attr};
 
@@ -71,29 +71,39 @@ fn draw_pixel_pair(term: &mut Terminal, col_idx: usize, p1: usize, p2: usize) {
     let c1 = p1 / 4;
     let c2 = p2 / 4;
 
+    // Fill in full height cells.
     let full_cell_char = pixel_nums_to_braille(Some(0), Some(0));
     for row_idx in max(c1, c2)..term.rows() {
         term[(col_idx, row_idx)] = char_to_cell(full_cell_char);
     }
 
     let left_fill_cell_char = pixel_nums_to_braille(Some(0), None);
-    for row_idx in c1..max(c1, c2) {
+    for row_idx in min(c1, c2)..c2 {
         term[(col_idx, row_idx)] = char_to_cell(left_fill_cell_char);
     }
 
-    let right_fill_cell_char = pixel_nums_to_braille(Some(0), None);
-    for row_idx in c2..max(c1, c2) {
+    let right_fill_cell_char = pixel_nums_to_braille(None, Some(0));
+    for row_idx in min(c1, c2)..c1 {
         term[(col_idx, row_idx)] = char_to_cell(right_fill_cell_char);
     }
 
+    // Now fill in partial height cells.
     if c1 == c2 {
+        // top pixels are in the same cell
         term[(col_idx, c1)] = char_to_cell(
             pixel_nums_to_braille(Some((p1 % 4) as u8), Some((p2 % 4) as u8)));
+    } else if c1 > c2 {
+        // right pixel is in a higher cell.
+        term[(col_idx, c1)] = char_to_cell(
+            pixel_nums_to_braille(Some((p1 % 4) as u8), Some(0)));
+        term[(col_idx, c2)] = char_to_cell(
+            pixel_nums_to_braille(None, Some((p2 % 4) as u8)));
     } else {
+        // left pixel is in a higher cell.
         term[(col_idx, c1)] = char_to_cell(
             pixel_nums_to_braille(Some((p1 % 4) as u8), None));
         term[(col_idx, c2)] = char_to_cell(
-            pixel_nums_to_braille(None, Some((p2 % 4) as u8)));
+            pixel_nums_to_braille(Some(0), Some((p2 % 4) as u8)));
     }
 }
 
@@ -123,7 +133,8 @@ pub fn draw_spectrum(term: &mut Terminal, spec: Vec<Complex<f32>>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{pixel_nums_to_braille, fft_shift};
+    use super::{pixel_nums_to_braille, fft_shift, draw_pixel_pair};
+    use rustty::Terminal;
 
     #[test]
     fn test_fft_shift_dc() {
@@ -148,5 +159,35 @@ mod tests {
         assert_eq!(pixel_nums_to_braille(Some(1), Some(2)), '⣦');
         assert_eq!(pixel_nums_to_braille(None, Some(3)), '⢀');
         assert_eq!(pixel_nums_to_braille(Some(2), None), '⡄');
+        assert_eq!(pixel_nums_to_braille(None, None), '⠀');
+    }
+
+    #[test]
+    fn test_draw_pixel_pair() {
+        let mut term = Terminal::new().unwrap();
+
+        // Test drawing with the same top cell
+        draw_pixel_pair(&mut term, 0, 4, 6);
+        assert_eq!(term[(0, term.rows() - 3)].ch(), ' ');
+        assert_eq!(term[(0, term.rows() - 2)].ch(), '⣰');
+        assert_eq!(term[(0, term.rows() - 1)].ch(), '⣿');
+        term.clear().unwrap();
+
+        // Test drawing with the top pixel in each column being in
+        // different cells
+        draw_pixel_pair(&mut term, 0, 4, 8);
+        assert_eq!(term[(0, term.rows() - 4)].ch(), ' ');
+        assert_eq!(term[(0, term.rows() - 3)].ch(), '⢀');
+        assert_eq!(term[(0, term.rows() - 2)].ch(), '⣸');
+        assert_eq!(term[(0, term.rows() - 1)].ch(), '⣿');
+        term.clear().unwrap();
+
+        draw_pixel_pair(&mut term, 1, 13, 2);
+        assert_eq!(term[(1, term.rows() - 5)].ch(), ' ');
+        assert_eq!(term[(1, term.rows() - 4)].ch(), '⡄');
+        assert_eq!(term[(1, term.rows() - 3)].ch(), '⡇');
+        assert_eq!(term[(1, term.rows() - 2)].ch(), '⡇');
+        assert_eq!(term[(1, term.rows() - 1)].ch(), '⣷');
+        term.clear().unwrap();
     }
 }
