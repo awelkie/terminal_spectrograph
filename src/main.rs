@@ -11,11 +11,11 @@ mod drawing;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use num::Complex;
 use rustfft::FFT;
-use rustty::{Terminal, Event};
+use rustty::Event;
 use docopt::Docopt;
 
 use radio::hackrf::HackRF;
-use drawing::draw_spectrum;
+use drawing::Canvas;
 
 const USAGE: &'static str = "
 Terminal Spectrograph
@@ -80,13 +80,9 @@ fn main() {
         return;
     }
 
-    let mut radio = HackRF::open().unwrap_or_else(|_| {
-        panic!("Couldn't open HackRF radio.");
-    });
+    let mut radio = HackRF::open().expect("Error opening HackRF");
 
-    let mut term = Terminal::new().unwrap_or_else(|e| {
-        panic!("Couldn't open terminal: {}", e);
-    });
+    let mut canvas = Canvas::new().expect("Error opening terminal");
 
     radio.set_frequency(args.arg_freq_hz.unwrap()).unwrap();
     radio.set_sample_rate(args.arg_bandwidth_hz.unwrap()).unwrap();
@@ -99,9 +95,8 @@ fn main() {
     });
 
     for spec in spec_recv.iter() {
-        draw_spectrum(&mut term, spec);
-        term.swap_buffers().unwrap();
-        if let Ok(Some(Event::Key('q'))) = term.get_event(0) {
+        canvas.add_spectrum(spec);
+        if let Ok(Some(Event::Key('q'))) = canvas.get_term().get_event(0) {
             break;
         }
     }

@@ -1,7 +1,55 @@
 use std::char;
 use std::cmp::{max, min};
+use std::collections::VecDeque;
 use num::Complex;
-use rustty::{Terminal, Cell, Style, Attr};
+use rustty;
+use rustty::{Attr, Terminal, Cell, CellAccessor, HasSize};
+use rustty::ui::{Alignable, Widget, VerticalAlign};
+
+pub struct Canvas {
+    term: Terminal,
+    spectrum: Widget,
+    waterfall: Widget,
+    history: VecDeque<Vec<Complex<f32>>>,
+}
+
+impl Canvas {
+    pub fn new() -> Result<Self, rustty::Error> {
+        let term = try!(Terminal::new());
+        let (cols, rows) = term.size();
+
+        let spectrum_height = rows / 2;
+        let waterfall_height = if rows % 2 != 0 { rows / 2 } else { rows / 2 + 1 };
+
+        let mut spectrum = Widget::new(cols, spectrum_height);
+        spectrum.valign(&term, VerticalAlign::Top, 0);
+
+        let mut waterfall = Widget::new(cols, waterfall_height);
+        waterfall.valign(&term, VerticalAlign::Bottom, 0);
+
+        Ok(Canvas {
+            term: term,
+            spectrum: spectrum,
+            waterfall: waterfall,
+            history: VecDeque::with_capacity(waterfall_height),
+        })
+    }
+
+    /// Adds a spectrum to the history and draws it on the waterfall
+    /// and the spectrum view.
+    pub fn add_spectrum(&mut self, spec: Vec<Complex<f32>>) {
+        draw_spectrum(&mut self.spectrum, &spec);
+        self.history.push_front(spec);
+
+        self.spectrum.draw_into(&mut self.term);
+        self.waterfall.draw_into(&mut self.term);
+        self.term.swap_buffers().unwrap();
+    }
+
+    pub fn get_term(&mut self) -> &mut Terminal {
+        &mut self.term
+    }
+}
 
 // indexing is from the top of the cell
 fn pixel_nums_to_braille(p1: Option<u8>, p2: Option<u8>) -> char {
@@ -53,11 +101,16 @@ fn spectrum_to_bin_heights(spec: &[Complex<f32>], dest: &mut [f32]) {
 }
 
 fn char_to_cell(c: char) -> Cell {
-    Cell::new(c, Style::with_attr(Attr::Bold), Style::with_attr(Attr::Default))
+    let mut cell = Cell::with_char(c);
+    cell.set_attrs(Attr::Bold);
+    cell
 }
 
-fn draw_pixel_pair(term: &mut Terminal, col_idx: usize, p1: usize, p2: usize) {
-    let max_pixel_height = 4 * term.rows();
+fn draw_pixel_pair<T>(canvas: &mut T, col_idx: usize, p1: usize, p2: usize)
+    where T: CellAccessor + HasSize
+{
+    let (_, rows) = canvas.size();
+    let max_pixel_height = 4 * rows;
 
     // clamp heights
     let p1 = if p1 >= max_pixel_height { max_pixel_height - 1} else { p1 };
@@ -73,50 +126,50 @@ fn draw_pixel_pair(term: &mut Terminal, col_idx: usize, p1: usize, p2: usize) {
 
     // Fill in full height cells.
     let full_cell_char = pixel_nums_to_braille(Some(0), Some(0));
-    for row_idx in max(c1, c2)..term.rows() {
-        term[(col_idx, row_idx)] = char_to_cell(full_cell_char);
+    for row_idx in max(c1, c2)..rows {
+        *canvas.get_mut(col_idx, row_idx).unwrap() = char_to_cell(full_cell_char);
     }
 
     let left_fill_cell_char = pixel_nums_to_braille(Some(0), None);
     for row_idx in min(c1, c2)..c2 {
-        term[(col_idx, row_idx)] = char_to_cell(left_fill_cell_char);
+        *canvas.get_mut(col_idx, row_idx).unwrap() = char_to_cell(left_fill_cell_char);
     }
 
     let right_fill_cell_char = pixel_nums_to_braille(None, Some(0));
     for row_idx in min(c1, c2)..c1 {
-        term[(col_idx, row_idx)] = char_to_cell(right_fill_cell_char);
+        *canvas.get_mut(col_idx, row_idx).unwrap() = char_to_cell(right_fill_cell_char);
     }
 
     // Now fill in partial height cells.
     if c1 == c2 {
         // top pixels are in the same cell
-        term[(col_idx, c1)] = char_to_cell(
+        *canvas.get_mut(col_idx, c1).unwrap() = char_to_cell(
             pixel_nums_to_braille(Some((p1 % 4) as u8), Some((p2 % 4) as u8)));
     } else if c1 > c2 {
         // right pixel is in a higher cell.
-        term[(col_idx, c1)] = char_to_cell(
+        *canvas.get_mut(col_idx, c1).unwrap() = char_to_cell(
             pixel_nums_to_braille(Some((p1 % 4) as u8), Some(0)));
-        term[(col_idx, c2)] = char_to_cell(
+        *canvas.get_mut(col_idx, c2).unwrap() = char_to_cell(
             pixel_nums_to_braille(None, Some((p2 % 4) as u8)));
     } else {
         // left pixel is in a higher cell.
-        term[(col_idx, c1)] = char_to_cell(
+        *canvas.get_mut(col_idx, c1).unwrap() = char_to_cell(
             pixel_nums_to_braille(Some((p1 % 4) as u8), None));
-        term[(col_idx, c2)] = char_to_cell(
+        *canvas.get_mut(col_idx, c2).unwrap() = char_to_cell(
             pixel_nums_to_braille(Some(0), Some((p2 % 4) as u8)));
     }
 }
 
-pub fn draw_spectrum(term: &mut Terminal, spec: Vec<Complex<f32>>) {
-    term.clear().unwrap();
-    let (num_cols, num_rows) = term.size();
+fn draw_spectrum<T: CellAccessor + HasSize>(canvas: &mut T, spec: &[Complex<f32>]) {
+    canvas.clear(Cell::default());
+    let (num_cols, num_rows) = canvas.size();
     let pixel_height = num_rows * 4;
     let pixel_width = num_cols * 2;
     // TODO what should this value be?
     let max_height = 500.0;
 
     let mut bins = vec![0.0; pixel_width];
-    spectrum_to_bin_heights(&spec[..], &mut bins[..]);
+    spectrum_to_bin_heights(spec, &mut bins[..]);
 
     for col_idx in 0..num_cols {
         // height in float between 0 and 1.
@@ -127,7 +180,7 @@ pub fn draw_spectrum(term: &mut Terminal, spec: Vec<Complex<f32>>) {
         let p1 = (h1 * pixel_height as f32).floor() as usize;
         let p2 = (h2 * pixel_height as f32).floor() as usize;
 
-        draw_pixel_pair(term, col_idx, p1, p2);
+        draw_pixel_pair(canvas, col_idx, p1, p2);
     }
 }
 
