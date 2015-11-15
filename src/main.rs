@@ -4,6 +4,7 @@ extern crate rustfft;
 extern crate rustty;
 extern crate rustc_serialize;
 extern crate docopt;
+extern crate itertools;
 
 mod radio;
 mod drawing;

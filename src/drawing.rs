@@ -1,16 +1,17 @@
 use std::char;
 use std::cmp::{max, min};
 use std::collections::VecDeque;
-use num::Complex;
+use num::{Complex, Float};
 use rustty;
-use rustty::{Attr, Terminal, Cell, CellAccessor, HasSize};
+use rustty::{Attr, Color, Terminal, Cell, CellAccessor, HasSize};
 use rustty::ui::{Alignable, Widget, VerticalAlign};
+use itertools::{Itertools, EitherOrBoth};
 
 pub struct Canvas {
     term: Terminal,
     spectrum: Widget,
     waterfall: Widget,
-    history: VecDeque<Vec<Complex<f32>>>,
+    history: VecDeque<Vec<f32>>,
 }
 
 impl Canvas {
@@ -31,7 +32,7 @@ impl Canvas {
             term: term,
             spectrum: spectrum,
             waterfall: waterfall,
-            history: VecDeque::with_capacity(waterfall_height),
+            history: VecDeque::with_capacity(waterfall_height * 2),
         })
     }
 
@@ -39,7 +40,11 @@ impl Canvas {
     /// and the spectrum view.
     pub fn add_spectrum(&mut self, spec: Vec<Complex<f32>>) {
         draw_spectrum(&mut self.spectrum, &spec);
-        self.history.push_front(spec);
+
+        let normalized = normalize_spectrum(&spec);
+        self.history.push_front(normalized);
+
+        draw_waterfall(&mut self.waterfall, &self.history);
 
         self.spectrum.draw_into(&mut self.term);
         self.waterfall.draw_into(&mut self.term);
@@ -49,6 +54,60 @@ impl Canvas {
     pub fn get_term(&mut self) -> &mut Terminal {
         &mut self.term
     }
+}
+
+fn draw_waterfall<T: CellAccessor + HasSize>(canvas: &mut T, spectra: &VecDeque<Vec<f32>>) {
+    let (cols, rows) = canvas.size();
+    for (row, mut specs) in (0..rows).zip(&spectra.iter().chunks_lazy(2)) {
+        if let Some(upper_heights) = specs.next().map(|vec| vec.iter()) {
+            match specs.next().map(|vec| vec.iter()) {
+                Some(lower_heights) => {
+                    for (c, heights) in (0..cols).zip(upper_heights.zip_longest(lower_heights)) {
+                        let (u, l) = match heights {
+                            EitherOrBoth::Both(&upper, &lower) => (upper, lower),
+                            EitherOrBoth::Left(&upper) => (upper, 0.0),
+                            EitherOrBoth::Right(&lower) => (0.0, lower),
+                        };
+                        *canvas.get_mut(c, row).unwrap() = spectrum_heights_to_waterfall_cell(u, l);
+                    }
+                },
+                None => {
+                    for (c, u) in (0..cols).zip(upper_heights) {
+                        *canvas.get_mut(c, row).unwrap() = spectrum_heights_to_waterfall_cell(*u, 0.0);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn spectrum_heights_to_waterfall_cell(upper: f32, lower: f32) -> Cell {
+    Cell::new('▀',
+              Color::Byte(color_mapping(upper)),
+              Color::Byte(color_mapping(lower)),
+              Attr::Default)
+}
+
+fn color_mapping(f: f32) -> u8 {
+    let lower = 16.0;
+    let upper = 231.0;
+    let mapped = f * (upper - lower) + lower;
+    if mapped < lower {
+        lower as u8
+    } else if mapped > upper {
+        upper as u8
+    } else {
+        mapped as u8
+    }
+}
+
+fn normalize_spectrum(spec: &[Complex<f32>]) -> Vec<f32> {
+    // FFT shift
+    let (first_half, last_half) = spec.split_at((spec.len() + 1) / 2);
+    let shifted_spec = last_half.iter().chain(first_half.iter());
+
+    // normalize and take the log
+    shifted_spec.map(Complex::norm).map(Float::log10).collect()
 }
 
 // indexing is from the top of the cell
@@ -89,7 +148,7 @@ fn spectrum_to_bin_heights(spec: &[Complex<f32>], dest: &mut [f32]) {
 
     // subsample
     let mut last_idx = -1isize;
-    for (i, x) in spec.iter().map(|x| x.norm()).enumerate() {
+    for (i, x) in spec.iter().map(Complex::norm).enumerate() {
         if (i * dest.len() / spec.len()) as isize > last_idx {
             last_idx += 1;
             dest[last_idx as usize] = x;
