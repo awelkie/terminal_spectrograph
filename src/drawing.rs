@@ -41,8 +41,9 @@ impl Canvas {
     pub fn add_spectrum(&mut self, spec: Vec<Complex<f32>>) {
         draw_spectrum(&mut self.spectrum, &spec);
 
-        let normalized = normalize_spectrum(&spec);
-        self.history.push_front(normalized);
+        let normalized = normalize_spectrum(&spec, 26.0);
+        let averaged = normalized.chunks(2).map(|v| (v[0] + v[1]) / 2.0).collect();
+        self.history.push_front(averaged);
 
         draw_waterfall(&mut self.waterfall, &self.history);
 
@@ -88,9 +89,13 @@ fn spectrum_heights_to_waterfall_cell(upper: f32, lower: f32) -> Cell {
               Attr::Default)
 }
 
+/// Assumes `f` is between 0 and 1. Anything outside of this range
+/// will be clamped.
 fn color_mapping(f: f32) -> u8 {
-    let lower = 16.0;
-    let upper = 231.0;
+    //let lower = 16.0;
+    //let upper = 231.0;
+    let lower = 232.0;
+    let upper = 255.0;
     let mapped = f * (upper - lower) + lower;
     if mapped < lower {
         lower as u8
@@ -101,13 +106,17 @@ fn color_mapping(f: f32) -> u8 {
     }
 }
 
-fn normalize_spectrum(spec: &[Complex<f32>]) -> Vec<f32> {
+fn normalize_spectrum(spec: &[Complex<f32>], max_db: f32) -> Vec<f32> {
     // FFT shift
     let (first_half, last_half) = spec.split_at((spec.len() + 1) / 2);
     let shifted_spec = last_half.iter().chain(first_half.iter());
 
     // normalize and take the log
-    shifted_spec.map(Complex::norm).map(Float::log10).collect()
+    shifted_spec.map(Complex::norm)
+                .map(Float::log10)
+                .map(|x| 10.0 * x)
+                .map(|x| x / max_db)
+                .collect()
 }
 
 // indexing is from the top of the cell
