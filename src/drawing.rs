@@ -41,7 +41,7 @@ impl Canvas {
     pub fn add_spectrum(&mut self, spec: Vec<Complex<f32>>) {
         draw_spectrum(&mut self.spectrum, &spec);
 
-        let normalized = normalize_spectrum(&spec, 26.0);
+        let normalized = normalize_spectrum(&spec, 50.0);
         let averaged = normalized.chunks(2).map(|v| (v[0] + v[1]) / 2.0).collect();
         self.history.push_front(averaged);
 
@@ -92,18 +92,26 @@ fn spectrum_heights_to_waterfall_cell(upper: f32, lower: f32) -> Cell {
 /// Assumes `f` is between 0 and 1. Anything outside of this range
 /// will be clamped.
 fn color_mapping(f: f32) -> u8 {
-    //let lower = 16.0;
-    //let upper = 231.0;
-    let lower = 232.0;
-    let upper = 255.0;
-    let mapped = f * (upper - lower) + lower;
-    if mapped < lower {
-        lower as u8
-    } else if mapped > upper {
-        upper as u8
+    let mapping = [16, 17, 18, 19, 21, 27, 33, 39, 45, 51,
+                   50, 49, 48, 47, 46, 82, 118, 154, 190, 226];
+    let idx = (f * (mapping.len() as f32)) as i32;
+    if idx < 0 {
+        mapping[0]
+    } else if idx >= mapping.len() as i32 {
+        mapping[mapping.len() - 1]
     } else {
-        mapped as u8
+        mapping[idx as usize]
     }
+    //let lower = 232.0;
+    //let upper = 255.0;
+    //let mapped = f * (upper - lower) + lower;
+    //if mapped < lower {
+        //lower as u8
+    //} else if mapped > upper {
+        //upper as u8
+    //} else {
+        //mapped as u8
+    //}
 }
 
 fn normalize_spectrum(spec: &[Complex<f32>], max_db: f32) -> Vec<f32> {
