@@ -60,24 +60,15 @@ impl Canvas {
 fn draw_waterfall<T: CellAccessor + HasSize>(canvas: &mut T, spectra: &VecDeque<Vec<f32>>) {
     let (cols, rows) = canvas.size();
     for (row, mut specs) in (0..rows).zip(&spectra.iter().chunks_lazy(2)) {
-        if let Some(upper_heights) = specs.next().map(|vec| vec.iter()) {
-            match specs.next().map(|vec| vec.iter()) {
-                Some(lower_heights) => {
-                    for (c, heights) in (0..cols).zip(upper_heights.zip_longest(lower_heights)) {
-                        let (u, l) = match heights {
-                            EitherOrBoth::Both(&upper, &lower) => (upper, lower),
-                            EitherOrBoth::Left(&upper) => (upper, 0.0),
-                            EitherOrBoth::Right(&lower) => (0.0, lower),
-                        };
-                        *canvas.get_mut(c, row).unwrap() = spectrum_heights_to_waterfall_cell(u, l);
-                    }
-                },
-                None => {
-                    for (c, u) in (0..cols).zip(upper_heights) {
-                        *canvas.get_mut(c, row).unwrap() = spectrum_heights_to_waterfall_cell(*u, 0.0);
-                    }
-                }
-            }
+        let upper_heights = specs.next().into_iter().flat_map(|x| x);
+        let lower_heights = specs.next().into_iter().flat_map(|x| x);
+        for (c, heights) in (0..cols).zip(upper_heights.zip_longest(lower_heights)) {
+            let (u, l) = match heights {
+                EitherOrBoth::Both(&upper, &lower) => (upper, lower),
+                EitherOrBoth::Left(&upper) => (upper, 0.0),
+                EitherOrBoth::Right(&lower) => (0.0, lower),
+            };
+            *canvas.get_mut(c, row).unwrap() = spectrum_heights_to_waterfall_cell(u, l);
         }
     }
 }
