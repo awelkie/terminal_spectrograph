@@ -8,15 +8,16 @@ extern crate itertools;
 
 mod radio;
 mod drawing;
+mod processing;
 
-use std::sync::mpsc::{Receiver, Sender, channel};
-use num::Complex;
-use rustfft::FFT;
+use std::sync::mpsc::channel;
+use std::sync::{Arc, Mutex};
 use rustty::Event;
 use docopt::Docopt;
 
 use radio::hackrf::HackRF;
 use drawing::Canvas;
+use processing::process_signal;
 
 const USAGE: &'static str = "
 Terminal Spectrograph
@@ -29,7 +30,6 @@ Usage:
 Options:
   -h --help          Show this screen.
   --version          Show version.
-  --fft-len=<len>    Length of the FFT [default: 4096].
   --fft-rate=<rate>  Number of FFTs per second. [default: 30].
 ";
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
@@ -38,37 +38,8 @@ const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 struct Args {
     arg_freq_hz: Option<u64>,
     arg_bandwidth_hz: Option<f64>,
-    flag_fft_len: usize,
-    flag_fft_rate: usize,
+    flag_fft_rate: u32,
     flag_version: bool,
-}
-
-fn process_buffer(recv: Receiver<Vec<Complex<i8>>>, send: Sender<Vec<Complex<f32>>>,
-                  fft_len: usize, fft_rate: usize, sample_rate_hz: usize) {
-    let mut fft = FFT::new(fft_len, false);
-    let mut spectrum = vec![Complex::new(0.0, 0.0); fft_len];
-    let mut signal = Vec::with_capacity(fft_len);
-    let num_samples_to_discard = (sample_rate_hz - fft_rate * fft_len) / fft_rate;
-    let mut samples_discarded = 0;
-    for buff in recv.iter() {
-        for x in buff {
-            if samples_discarded >= num_samples_to_discard {
-                signal.push(Complex::new(x.re as f32, x.im as f32));
-
-                if signal.len() >= signal.capacity() {
-                    fft.process(&signal[..], &mut spectrum[..]);
-                    if let Err(_) = send.send(spectrum.clone()) {
-                        return;
-                    }
-                    signal.clear();
-                    samples_discarded = 0;
-                }
-            } else {
-                // discard these samples to maintain the desired FFT rate.
-                samples_discarded += 1;
-            }
-        }
-    }
 }
 
 fn main() {
@@ -84,15 +55,17 @@ fn main() {
     let mut radio = HackRF::open().expect("Error opening HackRF");
 
     let mut canvas = Canvas::new().expect("Error opening terminal");
+    let fft_len = Arc::new(Mutex::new(canvas.get_spectrum_width()));
 
     radio.set_frequency(args.arg_freq_hz.unwrap()).unwrap();
     radio.set_sample_rate(args.arg_bandwidth_hz.unwrap()).unwrap();
     let (spec_send, spec_recv) = channel();
     let recv = radio.start_rx();
 
+    let len = fft_len.clone();
     std::thread::spawn(move || {
-        process_buffer(recv, spec_send, args.flag_fft_len, args.flag_fft_rate,
-                       args.arg_bandwidth_hz.unwrap() as usize);
+        process_signal(recv, spec_send, len, args.flag_fft_rate,
+                       args.arg_bandwidth_hz.unwrap() as u32);
     });
 
     for spec in spec_recv.iter() {
@@ -100,10 +73,9 @@ fn main() {
         if let Ok(Some(Event::Key('q'))) = canvas.get_term().get_event(0) {
             break;
         }
-    }
-    drop(spec_recv);
 
-    radio.stop_rx().unwrap_or_else(|_| {
-        panic!("Couldn't stop receiving");
-    });
+        *fft_len.lock().unwrap() = canvas.get_spectrum_width();
+    }
+
+    radio.stop_rx().expect("Couldn't stop receiving");
 }

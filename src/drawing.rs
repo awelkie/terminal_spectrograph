@@ -85,6 +85,10 @@ impl Canvas {
     pub fn get_term(&mut self) -> &mut Terminal {
         &mut self.term
     }
+
+    pub fn get_spectrum_width(&self) -> usize {
+        2 * self.term.cols()
+    }
 }
 
 fn draw_waterfall<T: CellAccessor + HasSize>(canvas: &mut T, spectra: &VecDeque<Vec<f32>>) {
