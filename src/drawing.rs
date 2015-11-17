@@ -58,11 +58,20 @@ impl Canvas {
     /// Adds a spectrum to the history and draws it on the waterfall
     /// and the spectrum view.
     pub fn add_spectrum(&mut self, spec: Vec<Complex<f32>>) {
-        draw_spectrum(&mut self.spectrum, &spec);
-
         let normalized = normalize_spectrum(&spec, 50.0);
+
+        draw_spectrum(&mut self.spectrum, &normalized);
+
+        // Since the waterfall has half the horizontal resolution of the spectrum view,
+        // average every two values and store the averaged spectrum.
         let averaged = normalized.chunks(2).map(|v| (v[0] + v[1]) / 2.0).collect();
+
+        // push spectrum onto the history
         self.history.push_front(averaged);
+        let (_, rows) = self.waterfall.size();
+        if self.history.len() >= rows * 2 {
+            self.history.pop_back();
+        }
 
         draw_waterfall(&mut self.waterfall, &self.history);
 
@@ -114,16 +123,6 @@ fn color_mapping(f: f32) -> u8 {
     } else {
         mapping[idx as usize]
     }
-    //let lower = 232.0;
-    //let upper = 255.0;
-    //let mapped = f * (upper - lower) + lower;
-    //if mapped < lower {
-        //lower as u8
-    //} else if mapped > upper {
-        //upper as u8
-    //} else {
-        //mapped as u8
-    //}
 }
 
 fn normalize_spectrum(spec: &[Complex<f32>], max_db: f32) -> Vec<f32> {
@@ -160,32 +159,6 @@ fn pixel_nums_to_braille(p1: Option<u8>, p2: Option<u8>) -> char {
     }
 
     char::from_u32((0x2800 + c) as u32).unwrap()
-}
-
-fn fft_shift<T: Clone>(spec: &mut [T]) {
-    let spec_copy = spec.to_owned();
-
-    let (first_half, last_half) = spec_copy.split_at((spec_copy.len() + 1) / 2);
-    let shifted_spec = last_half.iter().chain(first_half.iter());
-    for (x, y) in spec.iter_mut().zip(shifted_spec) {
-        *x = y.clone();
-    }
-}
-
-fn spectrum_to_bin_heights(spec: &[Complex<f32>], dest: &mut [f32]) {
-    //TODO should be plotting in log scale
-
-    // subsample
-    let mut last_idx = -1isize;
-    for (i, x) in spec.iter().map(Complex::norm).enumerate() {
-        if (i * dest.len() / spec.len()) as isize > last_idx {
-            last_idx += 1;
-            dest[last_idx as usize] = x;
-        }
-    }
-
-    //TODO unnecessary allocation
-    fft_shift(dest);
 }
 
 fn char_to_cell(c: char) -> Cell {
@@ -248,25 +221,19 @@ fn draw_pixel_pair<T>(canvas: &mut T, col_idx: usize, p1: usize, p2: usize)
     }
 }
 
-fn draw_spectrum<T: CellAccessor + HasSize>(canvas: &mut T, spec: &[Complex<f32>]) {
+fn draw_spectrum<T: CellAccessor + HasSize>(canvas: &mut T, spec: &[f32]) {
     canvas.clear(Cell::default());
     let (num_cols, num_rows) = canvas.size();
     let pixel_height = num_rows * 4;
-    let pixel_width = num_cols * 2;
-    // TODO what should this value be?
-    let max_height = 500.0;
 
-    let mut bins = vec![0.0; pixel_width];
-    spectrum_to_bin_heights(spec, &mut bins[..]);
-
-    for col_idx in 0..num_cols {
+    for (col_idx, chunk) in (0..num_cols).zip(spec.chunks(2)) {
         // height in float between 0 and 1.
-        let h1 = bins[col_idx * 2] / max_height;
-        let h2 = bins[col_idx * 2 + 1] / max_height;
+        let h1 = chunk[0];
+        let h2 = chunk[1];
 
         // The "pixel" height of each point.
-        let p1 = (h1 * pixel_height as f32).floor() as usize;
-        let p2 = (h2 * pixel_height as f32).floor() as usize;
+        let p1 = (h1 * pixel_height as f32).floor().max(0.0) as usize;
+        let p2 = (h2 * pixel_height as f32).floor().max(0.0) as usize;
 
         draw_pixel_pair(canvas, col_idx, p1, p2);
     }
@@ -274,25 +241,8 @@ fn draw_spectrum<T: CellAccessor + HasSize>(canvas: &mut T, spec: &[Complex<f32>
 
 #[cfg(test)]
 mod tests {
-    use super::{pixel_nums_to_braille, fft_shift, draw_pixel_pair};
+    use super::{pixel_nums_to_braille, draw_pixel_pair};
     use rustty::Terminal;
-
-    #[test]
-    fn test_fft_shift_dc() {
-        let len = 9;
-        let mut spec = vec![0; len];
-        spec[0] = 1;
-        fft_shift(&mut spec[..]);
-        assert_eq!(spec[len / 2], 1);
-    }
-
-    #[test]
-    fn test_fft_shift_even() {
-        let mut before: Vec<usize> = (0..10).collect();
-        let after = vec![5, 6, 7, 8, 9, 0, 1, 2, 3, 4];
-        fft_shift(&mut before[..]);
-        assert_eq!(before, after);
-    }
 
     #[test]
     fn test_pixel_nums() {
