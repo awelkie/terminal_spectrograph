@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 use num::{Complex, Float};
 use rustty;
 use rustty::{Attr, Color, Terminal, Cell, CellAccessor, HasSize};
-use rustty::ui::{Alignable, Widget, VerticalAlign};
+use rustty::ui::{Alignable, Widget, VerticalAlign, HorizontalAlign};
 use itertools::{Itertools, EitherOrBoth};
 
 pub struct Canvas {
@@ -17,23 +17,42 @@ pub struct Canvas {
 impl Canvas {
     pub fn new() -> Result<Self, rustty::Error> {
         let term = try!(Terminal::new());
-        let (cols, rows) = term.size();
 
-        let spectrum_height = rows / 2;
-        let waterfall_height = if rows % 2 != 0 { rows / 2 } else { rows / 2 + 1 };
-
-        let mut spectrum = Widget::new(cols, spectrum_height);
-        spectrum.valign(&term, VerticalAlign::Top, 0);
-
-        let mut waterfall = Widget::new(cols, waterfall_height);
-        waterfall.valign(&term, VerticalAlign::Bottom, 0);
-
-        Ok(Canvas {
+        let mut canvas = Canvas {
             term: term,
-            spectrum: spectrum,
-            waterfall: waterfall,
-            history: VecDeque::with_capacity(waterfall_height * 2),
-        })
+            spectrum: Widget::new(0, 0),
+            waterfall: Widget::new(0, 0),
+            history: VecDeque::new(),
+        };
+
+        canvas.resize();
+
+        Ok(canvas)
+    }
+
+    fn resize(&mut self) {
+        let (cols, rows) = self.term.size();
+        let spectrum_height = rows / 2;
+        let waterfall_height = if rows % 2 == 0 { rows / 2 } else { rows / 2 + 1 };
+
+        self.spectrum = Widget::new(cols, spectrum_height);
+        self.spectrum.align(&self.term, HorizontalAlign::Middle, VerticalAlign::Top, 0);
+
+        self.waterfall = Widget::new(cols, waterfall_height);
+        self.waterfall.align(&self.term, HorizontalAlign::Middle, VerticalAlign::Bottom, 0);
+
+        self.history.reserve(waterfall_height * 2);
+    }
+
+    fn check_and_resize(&mut self) {
+        let (cols, rows) = self.term.size();
+        let (spectrum_cols, spectrum_rows) = self.spectrum.size();
+        let (waterfall_cols, waterfall_rows) = self.waterfall.size();
+        // if the terminal size has changed...
+        if cols != spectrum_cols || cols != waterfall_cols ||
+            rows != (spectrum_rows + waterfall_rows) {
+            self.resize();
+        }
     }
 
     /// Adds a spectrum to the history and draws it on the waterfall
@@ -50,6 +69,8 @@ impl Canvas {
         self.spectrum.draw_into(&mut self.term);
         self.waterfall.draw_into(&mut self.term);
         self.term.swap_buffers().unwrap();
+
+        self.check_and_resize();
     }
 
     pub fn get_term(&mut self) -> &mut Terminal {
