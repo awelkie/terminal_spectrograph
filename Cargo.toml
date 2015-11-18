@@ -1,7 +1,10 @@
 [package]
 name = "terminal_spectrograph"
 version = "0.1.0"
-authors = ["Allen Welkie <>"]
+authors = ["Allen Welkie <allen.welkie@gmail.com>"]
+
+[[bin]]
+name = "tspec"
 
 [dependencies]
 rustfft = "*"
