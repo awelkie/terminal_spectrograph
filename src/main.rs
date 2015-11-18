@@ -30,7 +30,7 @@ Usage:
 Options:
   -h --help          Show this screen.
   --version          Show version.
-  --fft-rate=<rate>  Number of FFTs per second. [default: 30].
+  --fft-rate=<rate>  Number of FFTs per second. [default: 10].
 ";
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
