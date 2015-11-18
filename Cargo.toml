@@ -7,10 +7,10 @@ authors = ["Allen Welkie <allen.welkie@gmail.com>"]
 name = "tspec"
 
 [dependencies]
-rustfft = "*"
-libc = "*"
-num = "*"
-rustty = "*"
-docopt = "*"
-rustc-serialize = "*"
-itertools = "*"
+rustfft = "^1.0"
+libc = "^0.2"
+num = "^0.1.27"
+rustty = "^0.1.9"
+docopt = "^0.6"
+rustc-serialize = "^0.3"
+itertools = "^0.4"
