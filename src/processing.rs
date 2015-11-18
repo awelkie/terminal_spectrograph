@@ -1,4 +1,4 @@
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::{Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use num::Complex;
 use rustfft::FFT;
@@ -54,7 +54,7 @@ impl SignalProcessor {
     }
 }
 
-pub fn process_signal(recv: Receiver<Vec<Complex<i8>>>, send: Sender<Vec<Complex<f32>>>,
+pub fn process_signal(recv: Receiver<Vec<Complex<i8>>>, send: SyncSender<Vec<Complex<f32>>>,
                       fft_len: Arc<Mutex<usize>>, fft_rate: u32, sample_rate_hz: u32) {
     let mut processor = {
         let len = fft_len.lock().unwrap();
@@ -72,7 +72,10 @@ pub fn process_signal(recv: Receiver<Vec<Complex<i8>>>, send: Sender<Vec<Complex
         let spectra = processor.add_signal_buffer(buff);
 
         for spectrum in spectra {
-            if let Err(_) = send.send(spectrum) {
+            // This will implicitly drop spectra when the printing end of the channel
+            // isn't ready.
+            // TODO should notify the user that we're dropping frames.
+            if let Err(TrySendError::Disconnected(_)) = send.try_send(spectrum) {
                 return;
             }
         }

@@ -10,7 +10,7 @@ mod radio;
 mod drawing;
 mod processing;
 
-use std::sync::mpsc::channel;
+use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
 use rustty::Event;
 use docopt::Docopt;
@@ -59,7 +59,7 @@ fn main() {
 
     radio.set_frequency(args.arg_freq_hz.unwrap()).unwrap();
     radio.set_sample_rate(args.arg_bandwidth_hz.unwrap()).unwrap();
-    let (spec_send, spec_recv) = channel();
+    let (spec_send, spec_recv) = sync_channel(1);
     let recv = radio.start_rx();
 
     let len = fft_len.clone();
