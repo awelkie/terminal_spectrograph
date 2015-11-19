@@ -11,7 +11,7 @@ The waterfall is done by plotting the "upper half block" character (▀) with a 
 giving twice the vertical resolution of the cells. You'll need a terminal with 256-color support for
 the colors to work properly.
 
-The FFTs are done with the [RustFFT](https://github.com/cpjreynolds/rustty) library, and the terminal UI is done using the
+The FFTs are done with the [RustFFT](https://github.com/awelkie/rustfft) library, and the terminal UI is done using the
 [rustty](https://github.com/cpjreynolds/rustty) library.
 
 # Radio
