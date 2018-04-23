@@ -16,3 +16,6 @@ The FFTs are done with the [RustFFT](https://github.com/awelkie/rustfft) library
 
 # Radio
 Currently, this project only works with the HackRF. Support for other radios should be coming soon.
+
+## Hackrf Dependencies
+Ubuntu 16.04: ```libhackrf-dev```
