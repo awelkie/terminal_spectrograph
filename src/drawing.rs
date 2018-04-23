@@ -2,10 +2,10 @@ use std::char;
 use std::cmp::{max, min};
 use std::collections::VecDeque;
 use num::{Complex, Float};
-use rustty;
 use rustty::{Attr, Color, Terminal, Cell, CellAccessor, HasSize};
 use rustty::ui::{Alignable, Widget, VerticalAlign, HorizontalAlign};
 use itertools::{Itertools, EitherOrBoth};
+use std::io;
 
 pub struct Canvas {
     term: Terminal,
@@ -15,7 +15,7 @@ pub struct Canvas {
 }
 
 impl Canvas {
-    pub fn new() -> Result<Self, rustty::Error> {
+    pub fn new() -> Result<Self, io::Error> {
         let term = try!(Terminal::new());
 
         let mut canvas = Canvas {

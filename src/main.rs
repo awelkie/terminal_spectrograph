@@ -18,6 +18,7 @@ use docopt::Docopt;
 use radio::hackrf::HackRF;
 use drawing::Canvas;
 use processing::process_signal;
+use std::time::Duration;
 
 const USAGE: &'static str = "
 Terminal Spectrograph
@@ -70,7 +71,7 @@ fn main() {
 
     for spec in spec_recv.iter() {
         canvas.add_spectrum(spec);
-        if let Ok(Some(Event::Key('q'))) = canvas.get_term().get_event(0) {
+        if let Ok(Some(Event::Key('q'))) = canvas.get_term().get_event(Duration::from_secs(0)) {
             break;
         }
 
