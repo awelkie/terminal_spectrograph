@@ -57,13 +57,13 @@ mod ffi {
 fn init() -> Result<(), ()> {
     //TODO how do I call hackrf_exit()?
     static mut INIT: Once = ONCE_INIT;
-    static mut result: ffi::Return = ffi::Return::SUCCESS;
+    static mut RESULT: ffi::Return = ffi::Return::SUCCESS;
     unsafe {
         INIT.call_once(|| {
-            result = ffi::hackrf_init();
+            RESULT = ffi::hackrf_init();
         });
 
-        match result {
+        match RESULT {
             ffi::Return::SUCCESS => Ok(()),
             _ => Err(()),
         }
