@@ -1,10 +1,12 @@
-use std::sync::mpsc::{Receiver, SyncSender, TrySendError};
+use rustfft::{ FFT, FFTplanner };
+use rustfft::num_complex::Complex;
+
 use std::sync::{Arc, Mutex};
-use num::Complex;
-use rustfft::FFT;
+use std::sync::mpsc::{Receiver, SyncSender, TrySendError};
+
 
 struct SignalProcessor {
-    fft: FFT<f32>,
+    fft: Arc<FFT<f32>>,
     signal: Vec<Complex<f32>>,
     fft_rate_hz: u32,
     sample_rate_hz: u32,
@@ -14,8 +16,11 @@ struct SignalProcessor {
 
 impl SignalProcessor {
     fn new(sample_rate_hz: u32, fft_rate_hz: u32, fft_len: usize) -> Self {
+        let mut planner = FFTplanner::new(false);
+        let fft = planner.plan_fft(fft_len);
+
         SignalProcessor {
-            fft: FFT::new(fft_len, false),
+            fft: fft,
             signal: Vec::with_capacity(fft_len),
             fft_rate_hz: fft_rate_hz,
             sample_rate_hz: sample_rate_hz,
@@ -25,7 +30,9 @@ impl SignalProcessor {
     }
 
     fn new_fft_len(&mut self, fft_len: usize) {
-        self.fft = FFT::new(fft_len, false);
+        let mut planner = FFTplanner::new(false);
+        self.fft = planner.plan_fft(fft_len);
+
         self.signal.reserve(fft_len);
         self.fft_len = fft_len;
     }
@@ -40,7 +47,7 @@ impl SignalProcessor {
 
                 if self.signal.len() >= self.fft_len {
                     let mut spectrum = vec![Complex::new(0.0, 0.0); self.fft_len];
-                    self.fft.process(&self.signal[..], &mut spectrum[..]);
+                    self.fft.process(&mut self.signal[..], &mut spectrum[..]);
                     self.signal.clear();
                     self.num_samples_discarded = 0;
                     spectra.push(spectrum);

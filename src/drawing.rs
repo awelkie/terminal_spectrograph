@@ -1,11 +1,14 @@
+use std::io;
 use std::char;
 use std::cmp::{max, min};
 use std::collections::VecDeque;
-use num::{Complex, Float};
+
+use rustfft::num_traits::Float;
+use rustfft::num_complex::Complex;
+use itertools::{Itertools, EitherOrBoth};
 use rustty::{Attr, Color, Terminal, Cell, CellAccessor, HasSize};
 use rustty::ui::{Alignable, Widget, VerticalAlign, HorizontalAlign};
-use itertools::{Itertools, EitherOrBoth};
-use std::io;
+
 
 pub struct Canvas {
     term: Terminal,

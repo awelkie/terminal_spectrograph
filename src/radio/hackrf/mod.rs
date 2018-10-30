@@ -1,10 +1,12 @@
-use std::sync::{Once, ONCE_INIT};
-use std::sync::mpsc::{channel, Sender, Receiver};
+use libc::c_int;
+use rustfft::num_complex::Complex;
+
 use std::ptr;
 use std::mem;
 use std::slice;
-use libc::c_int;
-use num::Complex;
+use std::sync::{Once, ONCE_INIT};
+use std::sync::mpsc::{channel, Sender, Receiver};
+
 
 #[allow(dead_code, non_camel_case_types)]
 mod ffi {
