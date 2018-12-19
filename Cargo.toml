@@ -3,14 +3,13 @@ name = "terminal_spectrograph"
 version = "1.0.0"
 authors = ["Allen Welkie <allen.welkie@gmail.com>"]
 
-[[bin]]
-name = "tspec"
-
 [dependencies]
-rustfft = "^1.0"
-libc = "^0.2"
-num = "^0.1.27"
+rustfft = "2.1.0"
 rustty = "^0.1.9"
-docopt = "^0.6"
-rustc-serialize = "^0.3"
 itertools = "^0.4"
+
+[dev-dependencies]
+docopt = "^0.6"
+hound = "3.4.0"
+cpal = "0.8.2"
+rustc-serialize = "^0.3"
